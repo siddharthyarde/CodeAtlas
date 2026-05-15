@@ -1,6 +1,12 @@
 const jwt = require('jsonwebtoken');
 const https = require('https');
 const User = require('../models/User');
+const Repository = require('../models/Repository');
+const File = require('../models/File');
+const AISummary = require('../models/AISummary');
+const TeamMember = require('../models/TeamMember');
+const UsageLog = require('../models/UsageLog');
+const { deletePrefix } = require('../config/s3');
 
 /**
  * Sign and return a JWT for a given user id.
@@ -72,6 +78,7 @@ async function login(req, res, next) {
  * GET /api/auth/me  (protected)
  */
 async function getMe(req, res) {
+  const key = req.user.anthropicApiKey;
   res.json({
     success: true,
     data: {
@@ -82,11 +89,45 @@ async function getMe(req, res) {
         plan: req.user.plan,
         avatar: req.user.avatar,
         aiCallsThisMonth: req.user.aiCallsThisMonth,
+        aiCallsLimit: req.user.aiCallsLimit || 50,
         githubId: req.user.githubId,
         createdAt: req.user.createdAt,
+        hasAnthropicKey: !!key,
+        // Show a masked hint so the user knows which key is saved (never expose full key)
+        anthropicKeyHint: key ? `sk-ant-••••••••••••${key.slice(-6)}` : null,
       },
     },
   });
+}
+
+/**
+ * PATCH /api/auth/api-key  (protected)
+ * Body: { apiKey }  — saves the user's own Anthropic API key.
+ */
+async function saveApiKey(req, res) {
+  try {
+    const { apiKey } = req.body;
+    if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim().startsWith('sk-ant-')) {
+      return res.status(400).json({ success: false, error: 'Invalid Anthropic API key — it must start with sk-ant-' });
+    }
+    await User.findByIdAndUpdate(req.user._id, { anthropicApiKey: apiKey.trim() });
+    res.json({ success: true, data: { message: 'API key saved', hasAnthropicKey: true } });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to save API key' });
+  }
+}
+
+/**
+ * DELETE /api/auth/api-key  (protected)
+ * Clears the stored Anthropic API key.
+ */
+async function removeApiKey(req, res) {
+  try {
+    await User.findByIdAndUpdate(req.user._id, { anthropicApiKey: null });
+    res.json({ success: true, data: { message: 'API key removed', hasAnthropicKey: false } });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to remove API key' });
+  }
 }
 
 /**
@@ -140,11 +181,27 @@ async function changePassword(req, res, next) {
 
 /**
  * DELETE /api/auth/account  (protected)
- * Deletes user and all associated data. Phase 9 will cascade S3 deletion.
+ * Deletes user + all repos, files, summaries, team records, usage logs, and S3 objects.
  */
 async function deleteAccount(req, res, next) {
   try {
-    await User.findByIdAndDelete(req.user._id);
+    const userId = req.user._id;
+
+    const repos = await Repository.find({ userId }, 's3Prefix');
+    await Promise.all(
+      repos.map(r => r.s3Prefix ? deletePrefix(r.s3Prefix).catch(() => {}) : Promise.resolve())
+    );
+
+    const repoIds = repos.map(r => r._id);
+    await Promise.all([
+      File.deleteMany({ repoId: { $in: repoIds } }),
+      AISummary.deleteMany({ repoId: { $in: repoIds } }),
+      Repository.deleteMany({ userId }),
+      TeamMember.deleteMany({ $or: [{ invitedBy: userId }, { userId }] }),
+      UsageLog.deleteMany({ userId }),
+    ]);
+
+    await User.findByIdAndDelete(userId);
     res.json({ success: true, data: { message: 'Account deleted' } });
   } catch (err) {
     next(err);
@@ -223,37 +280,54 @@ function httpsPost(url, body) {
  * GET /api/auth/github/callback
  * Exchange code for token, upsert user, redirect with JWT.
  */
-async function githubCallback(req, res, next) {
+async function githubCallback(req, res) {
+  const CB = `${process.env.FRONTEND_URL}/auth-callback`;
   try {
-    const { code } = req.query;
-    if (!code) return res.redirect(`${process.env.FRONTEND_URL}/login?error=github_failed`);
+    const { code, error: ghError } = req.query;
+    if (ghError || !code) {
+      console.error('[github/callback] No code or GitHub error:', ghError);
+      return res.redirect(`${CB}?error=github_denied`);
+    }
 
     // Exchange code for access token
     const tokenData = await httpsPost('https://github.com/login/oauth/access_token', {
       client_id: process.env.GITHUB_CLIENT_ID,
       client_secret: process.env.GITHUB_CLIENT_SECRET,
       code,
+      redirect_uri: process.env.GITHUB_CALLBACK_URL,
     });
 
+    if (!tokenData.access_token) {
+      console.error('[github/callback] Token exchange failed:', tokenData);
+      return res.redirect(`${CB}?error=github_token&msg=${encodeURIComponent(tokenData.error_description || 'Token exchange failed')}`);
+    }
+
     const accessToken = tokenData.access_token;
-    if (!accessToken) return res.redirect(`${process.env.FRONTEND_URL}/login?error=github_failed`);
 
     // Fetch GitHub user profile
     const ghUser = await httpsGet('https://api.github.com/user', {
       Authorization: `Bearer ${accessToken}`,
     });
 
-    // Fetch primary email if not public
+    if (!ghUser.id) {
+      console.error('[github/callback] Failed to fetch GitHub user:', ghUser);
+      return res.redirect(`${CB}?error=github_failed`);
+    }
+
+    // Resolve email: public → private API → GitHub noreply fallback
     let email = ghUser.email;
     if (!email) {
       const emails = await httpsGet('https://api.github.com/user/emails', {
         Authorization: `Bearer ${accessToken}`,
       });
-      const primary = emails.find((e) => e.primary && e.verified);
+      const emailList = Array.isArray(emails) ? emails : [];
+      const primary = emailList.find((e) => e.primary && e.verified) || emailList.find((e) => e.verified) || emailList[0];
       email = primary?.email;
     }
-
-    if (!email) return res.redirect(`${process.env.FRONTEND_URL}/login?error=no_email`);
+    // Users with "Keep email private" get a GitHub-provided noreply address
+    if (!email) {
+      email = `${ghUser.id}+${ghUser.login}@users.noreply.github.com`;
+    }
 
     // Upsert user
     let user = await User.findOne({ $or: [{ githubId: String(ghUser.id) }, { email }] });
@@ -273,9 +347,87 @@ async function githubCallback(req, res, next) {
     }
 
     const token = signToken(user._id);
-    res.redirect(`${process.env.FRONTEND_URL}/dashboard?token=${token}`);
+    console.log(`[github/callback] Login success: ${user.email}`);
+    return res.redirect(`${CB}?token=${token}`);
   } catch (err) {
-    next(err);
+    console.error('[github/callback] Unexpected error:', err.message);
+    return res.redirect(`${process.env.FRONTEND_URL}/auth-callback?error=github_failed`);
+  }
+}
+
+// ─── Google OAuth ─────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/auth/google
+ * Redirect user to Google OAuth authorization page.
+ */
+function googleRedirect(req, res) {
+  const params = new URLSearchParams({
+    client_id: process.env.GOOGLE_CLIENT_ID,
+    redirect_uri: process.env.GOOGLE_CALLBACK_URL,
+    response_type: 'code',
+    scope: 'openid email profile',
+    access_type: 'offline',
+    prompt: 'select_account',
+  });
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+}
+
+/**
+ * GET /api/auth/google/callback
+ * Exchange code for token, upsert user, redirect with JWT.
+ */
+async function googleCallback(req, res) {
+  try {
+    const { code, error: gError } = req.query;
+    if (gError || !code) {
+      console.error('[google/callback] No code or Google error:', gError);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth-callback?error=google_failed`);
+    }
+
+    // Exchange code for access token
+    const tokenData = await httpsPost('https://oauth2.googleapis.com/token', {
+      code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: process.env.GOOGLE_CALLBACK_URL,
+      grant_type: 'authorization_code',
+    });
+
+    if (!tokenData.access_token) {
+      console.error('[google/callback] Token exchange failed:', tokenData);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth-callback?error=google_failed`);
+    }
+
+    // Fetch user profile
+    const gUser = await httpsGet('https://www.googleapis.com/oauth2/v3/userinfo', {
+      Authorization: `Bearer ${tokenData.access_token}`,
+    });
+
+    if (!gUser.email) {
+      console.error('[google/callback] No email from Google:', gUser);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth-callback?error=google_failed`);
+    }
+
+    // Upsert user
+    let user = await User.findOne({ email: gUser.email });
+    if (user) {
+      user.avatar = user.avatar || gUser.picture;
+      await user.save();
+    } else {
+      user = await User.create({
+        name: gUser.name || gUser.email.split('@')[0],
+        email: gUser.email,
+        avatar: gUser.picture || '',
+      });
+    }
+
+    const token = signToken(user._id);
+    console.log(`[google/callback] Login success: ${user.email}`);
+    return res.redirect(`${process.env.FRONTEND_URL}/auth-callback?token=${token}`);
+  } catch (err) {
+    console.error('[google/callback] Unexpected error:', err.message);
+    return res.redirect(`${process.env.FRONTEND_URL}/auth-callback?error=google_failed`);
   }
 }
 
@@ -287,6 +439,10 @@ module.exports = {
   updateProfile,
   changePassword,
   deleteAccount,
+  saveApiKey,
+  removeApiKey,
   githubRedirect,
   githubCallback,
+  googleRedirect,
+  googleCallback,
 };

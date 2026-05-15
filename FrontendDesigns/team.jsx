@@ -1,0 +1,121 @@
+function TeamPage({ toast }) {
+  const [members, setMembers] = useState(MockData.team);
+  const [pending, setPending] = useState(MockData.pending);
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState('viewer');
+  const [inviteLink, setInviteLink] = useState(null);
+
+  const sendInvite = (e) => {
+    e.preventDefault();
+    if (!email.includes('@')) { toast('Enter a valid email', 'error'); return; }
+    setPending(p => [...p, { email, role }]);
+    setInviteLink(`https://app.codeatlas.ai/invite/${Math.random().toString(36).slice(2, 10)}`);
+    setEmail('');
+    toast('Invite sent', 'success');
+  };
+
+  const remove = (id) => {
+    setMembers(m => m.filter(x => x.id !== id));
+    toast('Member removed', 'success');
+  };
+
+  return (
+    <div className="fade-up">
+      <PageHeader title="Team" subtitle="Manage members of your workspace" />
+
+      {/* Members */}
+      <div className="card" style={{ padding: 0, marginBottom: 22 }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-soft)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Team Members</h3>
+          <span className="pill badge-purple">{members.length}</span>
+        </div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: 'rgba(124,58,237,.04)' }}>
+              {['Member', 'Email', 'Role', 'Joined', ''].map((h, i) => (
+                <th key={i} style={{ textAlign: 'left', padding: '10px 20px', color: 'var(--text-3)', fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {members.map((m, i) => (
+              <tr key={m.id} style={{ borderTop: '1px solid var(--border-soft)' }}>
+                <td style={{ padding: '12px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 999, background: `hsl(${i * 70}, 50%, 45%)`, color: 'white', display: 'grid', placeItems: 'center', fontWeight: 600, fontSize: 12 }}>{m.avatar}</div>
+                    <span style={{ color: 'white', fontWeight: 500 }}>{m.name}</span>
+                  </div>
+                </td>
+                <td style={{ padding: '12px 20px', color: 'var(--text-2)' }}>{m.email}</td>
+                <td style={{ padding: '12px 20px' }}>
+                  <span className="pill" style={{
+                    background: m.role === 'owner' ? 'rgba(124,58,237,.18)' : m.role === 'editor' ? 'rgba(79,70,229,.18)' : 'rgba(107,114,128,.18)',
+                    color: m.role === 'owner' ? '#C4B5FD' : m.role === 'editor' ? '#A5B4FC' : '#9CA3AF',
+                  }}>{m.role}</span>
+                </td>
+                <td style={{ padding: '12px 20px', color: 'var(--text-3)', fontSize: 12 }}>{m.joined}</td>
+                <td style={{ padding: '12px 20px' }}>
+                  {m.role !== 'owner' && (
+                    <button onClick={() => remove(m.id)} style={{ background: 'transparent', border: '1px solid rgba(239,68,68,.3)', color: '#FCA5A5', padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Remove</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Invite */}
+      <div className="card" style={{ padding: 22, marginBottom: 22 }}>
+        <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 600 }}>Invite Team Member</h3>
+        <p style={{ margin: '0 0 16px', color: 'var(--text-2)', fontSize: 13 }}>They'll get an email with a one-click join link.</p>
+        <form onSubmit={sendInvite} style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', flex: '1 1 240px' }}>
+            <Icons.Mail size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)' }} />
+            <input className="input" style={{ paddingLeft: 36 }} placeholder="teammate@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <select value={role} onChange={(e) => setRole(e.target.value)}
+            style={{ padding: '11px 12px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'white', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <option value="viewer">Viewer</option>
+            <option value="editor">Editor</option>
+          </select>
+          <button type="submit" className="btn btn-primary"><Icons.Send size={14} /> Send Invite</button>
+        </form>
+
+        {inviteLink && (
+          <div className="fade-up" style={{ marginTop: 16, padding: 14, borderRadius: 8, background: 'rgba(34,197,94,.07)', border: '1px solid rgba(34,197,94,.25)' }}>
+            <div style={{ fontSize: 12, color: '#86EFAC', marginBottom: 8, fontWeight: 600 }}>Invite link ready · expires in 7 days</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input className="input mono" style={{ fontSize: 12, padding: '8px 10px' }} value={inviteLink} readOnly />
+              <button onClick={() => { navigator.clipboard?.writeText(inviteLink); toast('Link copied', 'success'); }}
+                className="btn btn-ghost" style={{ padding: '8px 12px', flexShrink: 0 }}>
+                <Icons.Copy size={14} /> Copy
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Pending */}
+      {pending.length > 0 && (
+        <div className="card" style={{ padding: 0 }}>
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border-soft)' }}>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Pending Invites</h3>
+          </div>
+          {pending.map((p, i) => (
+            <div key={i} style={{ padding: '12px 20px', borderTop: i ? '1px solid var(--border-soft)' : 0, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Icons.Mail size={14} style={{ color: 'var(--text-3)' }} />
+              <span style={{ color: '#E5E7EB', fontSize: 13.5, flex: 1 }}>{p.email}</span>
+              <span className="pill" style={{ background: 'rgba(107,114,128,.18)', color: '#9CA3AF' }}>{p.role}</span>
+              <span className="pill" style={{ background: 'rgba(245,158,11,.18)', color: '#FCD34D' }}>Pending</span>
+              <button onClick={() => { setPending(x => x.filter((_, j) => j !== i)); toast('Invite revoked', 'success'); }}
+                style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)', padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Revoke</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+window.TeamPage = TeamPage;

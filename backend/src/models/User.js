@@ -9,7 +9,9 @@ const userSchema = new mongoose.Schema({
   githubToken: { type: String, default: null },
   avatar: { type: String, default: '' },
   plan: { type: String, enum: ['free', 'pro'], default: 'free' },
+  anthropicApiKey: { type: String, default: null },
   aiCallsThisMonth: { type: Number, default: 0 },
+  aiCallsLimit: { type: Number, default: 50 },
   lastAIReset: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now },
 });
