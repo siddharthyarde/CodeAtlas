@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Logo } from '../components/Layout';
+import toast from 'react-hot-toast';
 
 // Dedicated landing page for OAuth redirects (/auth-callback?token=xxx or ?error=xxx)
 // Public route — never wrapped in ProtectedRoute.
@@ -11,9 +12,10 @@ export default function AuthCallbackPage() {
   const navigate = useNavigate();
   const { loginWithToken } = useAuth();
 
-  const token = searchParams.get('token');
-  const error = searchParams.get('error');
-  const msg   = searchParams.get('msg');
+  const token  = searchParams.get('token');
+  const error  = searchParams.get('error');
+  const msg    = searchParams.get('msg');
+  const linked = searchParams.get('linked');
 
   useEffect(() => {
     if (error || !token) {
@@ -30,7 +32,14 @@ export default function AuthCallbackPage() {
     }
 
     loginWithToken(token)
-      .then(() => navigate('/dashboard', { replace: true }))
+      .then(() => {
+        if (linked === '1') {
+          toast.success('GitHub connected to your account');
+          navigate('/settings', { replace: true });
+        } else {
+          navigate('/dashboard', { replace: true });
+        }
+      })
       .catch(() => navigate('/login?oauthError=Session+could+not+be+established.', { replace: true }));
   }, []);
 

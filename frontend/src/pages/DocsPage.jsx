@@ -1,10 +1,56 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Sidebar } from '../components/Layout';
+import { Sidebar, PageWrapper } from '../components/Layout';
 import { EmptyState } from '../components/Shared';
 import Icons from '../components/Icons';
 import api from '../services/api';
 import toast from 'react-hot-toast';
+
+function RepoSelector() {
+  const navigate = useNavigate();
+  const [repos, setRepos] = useState([]);
+  const [selected, setSelected] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/repo').then(res => {
+      const d = res.data.data;
+      setRepos(Array.isArray(d) ? d : (d?.repos || []));
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <PageWrapper>
+      <div className="card fade-up" style={{ padding: 32, textAlign: 'center', maxWidth: 480, margin: '60px auto' }}>
+        <div style={{ width: 56, height: 56, borderRadius: 14, background: 'rgba(124,58,237,.12)', color: '#A78BFA', display: 'grid', placeItems: 'center', margin: '0 auto 16px' }}>
+          <Icons.BookOpen size={26} />
+        </div>
+        <h3 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 700 }}>Select a Repository</h3>
+        <p style={{ margin: '0 0 22px', color: 'var(--text-2)', fontSize: 13.5 }}>Choose which repository to generate API documentation for.</p>
+        {loading ? (
+          <div style={{ color: 'var(--text-3)', fontSize: 13 }}>Loading repositories…</div>
+        ) : repos.length === 0 ? (
+          <div style={{ color: 'var(--text-3)', fontSize: 13 }}>
+            No repositories yet. <a href="/repositories" style={{ color: '#A78BFA' }}>Import one first →</a>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 10 }}>
+            <select value={selected} onChange={e => setSelected(e.target.value)}
+              style={{ flex: 1, padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, color: selected ? 'white' : 'var(--text-3)', fontSize: 13, fontFamily: 'inherit', cursor: 'pointer' }}>
+              <option value="">Choose a repository…</option>
+              {repos.map(r => (
+                <option key={r._id} value={r._id}>{r.name || r.url?.split('/').slice(-1)[0]}{r.status !== 'complete' ? ` (${r.status})` : ''}</option>
+              ))}
+            </select>
+            <button className="btn btn-primary" disabled={!selected} onClick={() => navigate(`/docs?repo=${selected}`)}>
+              Generate
+            </button>
+          </div>
+        )}
+      </div>
+    </PageWrapper>
+  );
+}
 
 export default function DocsPage() {
   const navigate = useNavigate();
@@ -44,6 +90,8 @@ export default function DocsPage() {
     const el = scrollRef.current?.querySelector(`#group-${gid}`);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+
+  if (!repoId) return <RepoSelector />;
 
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex' }}>

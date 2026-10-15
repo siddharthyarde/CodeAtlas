@@ -91,6 +91,7 @@ async function getMe(req, res) {
         aiCallsThisMonth: req.user.aiCallsThisMonth,
         aiCallsLimit: req.user.aiCallsLimit || 50,
         githubId: req.user.githubId,
+        githubUsername: req.user.githubUsername,
         createdAt: req.user.createdAt,
         hasAnthropicKey: !!key,
         // Show a masked hint so the user knows which key is saved (never expose full key)
@@ -213,12 +214,20 @@ async function deleteAccount(req, res, next) {
 /**
  * GET /api/auth/github
  * Redirect user to GitHub OAuth authorization page.
+ * Optional ?link_token=<jwt> — when present the callback will link GitHub to the
+ * existing account rather than creating a new one (used by Settings page).
  */
 function githubRedirect(req, res) {
+  const linkToken = req.query.link_token || '';
+  const statePayload = linkToken
+    ? Buffer.from(JSON.stringify({ link_token: linkToken })).toString('base64url')
+    : undefined;
+
   const params = new URLSearchParams({
     client_id: process.env.GITHUB_CLIENT_ID,
     redirect_uri: process.env.GITHUB_CALLBACK_URL,
     scope: 'user:email read:user',
+    ...(statePayload ? { state: statePayload } : {}),
   });
   res.redirect(`https://github.com/login/oauth/authorize?${params}`);
 }
@@ -279,14 +288,31 @@ function httpsPost(url, body) {
 /**
  * GET /api/auth/github/callback
  * Exchange code for token, upsert user, redirect with JWT.
+ *
+ * If a valid link_token was encoded in the OAuth state (set by Settings page),
+ * the GitHub identity is linked to that existing account instead of creating a new one.
  */
 async function githubCallback(req, res) {
   const CB = `${process.env.FRONTEND_URL}/auth-callback`;
   try {
-    const { code, error: ghError } = req.query;
+    const { code, state, error: ghError } = req.query;
     if (ghError || !code) {
       console.error('[github/callback] No code or GitHub error:', ghError);
       return res.redirect(`${CB}?error=github_denied`);
+    }
+
+    // Decode optional link_token from state (Settings page "Connect GitHub" flow)
+    let linkUserId = null;
+    if (state) {
+      try {
+        const stateData = JSON.parse(Buffer.from(state, 'base64url').toString());
+        if (stateData.link_token) {
+          const decoded = jwt.verify(stateData.link_token, process.env.JWT_SECRET);
+          linkUserId = decoded.id;
+        }
+      } catch (_) {
+        // Malformed state — ignore and fall through to normal flow
+      }
     }
 
     // Exchange code for access token
@@ -324,16 +350,33 @@ async function githubCallback(req, res) {
       const primary = emailList.find((e) => e.primary && e.verified) || emailList.find((e) => e.verified) || emailList[0];
       email = primary?.email;
     }
-    // Users with "Keep email private" get a GitHub-provided noreply address
     if (!email) {
       email = `${ghUser.id}+${ghUser.login}@users.noreply.github.com`;
     }
 
-    // Upsert user
-    let user = await User.findOne({ $or: [{ githubId: String(ghUser.id) }, { email }] });
+    let user;
+
+    // Link flow: attach GitHub identity to the currently-logged-in account
+    if (linkUserId) {
+      user = await User.findById(linkUserId);
+      if (user) {
+        user.githubId = String(ghUser.id);
+        user.githubToken = accessToken;
+        user.githubUsername = ghUser.login;
+        user.avatar = user.avatar || ghUser.avatar_url;
+        await user.save();
+        console.log(`[github/callback] Linked GitHub @${ghUser.login} to existing account: ${user.email}`);
+        const token = signToken(user._id);
+        return res.redirect(`${CB}?token=${token}&linked=1`);
+      }
+    }
+
+    // Normal sign-in / sign-up flow
+    user = await User.findOne({ $or: [{ githubId: String(ghUser.id) }, { email }] });
     if (user) {
       user.githubId = String(ghUser.id);
       user.githubToken = accessToken;
+      user.githubUsername = ghUser.login;
       user.avatar = user.avatar || ghUser.avatar_url;
       await user.save();
     } else {
@@ -342,6 +385,7 @@ async function githubCallback(req, res) {
         email,
         githubId: String(ghUser.id),
         githubToken: accessToken,
+        githubUsername: ghUser.login,
         avatar: ghUser.avatar_url,
       });
     }

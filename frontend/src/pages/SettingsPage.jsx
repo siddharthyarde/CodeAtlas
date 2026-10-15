@@ -73,7 +73,7 @@ export default function SettingsPage() {
     setSavingProfile(true);
     try {
       const res = await api.patch('/auth/profile', { name });
-      updateUser({ name: res.data.data?.name || name });
+      updateUser({ name: res.data.data?.user?.name || name });
       toast.success('Profile saved');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to save profile');
@@ -280,7 +280,7 @@ export default function SettingsPage() {
                   {user?.githubId ? `Connected as @${user.githubUsername || user.name}` : 'Not connected'}
                 </div>
               </div>
-              <a href={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}/api/auth/github`}>
+              <a href={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}/api/auth/github?link_token=${localStorage.getItem('token') || ''}`}>
                 <button className="btn btn-dark"><Icons.Github size={14} /> {user?.githubId ? 'Reconnect' : 'Connect'}</button>
               </a>
             </div>

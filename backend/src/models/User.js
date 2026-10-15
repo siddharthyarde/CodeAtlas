@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema({
   password: { type: String, default: null },
   githubId: { type: String, default: null },
   githubToken: { type: String, default: null },
+  githubUsername: { type: String, default: null },
   avatar: { type: String, default: '' },
   plan: { type: String, enum: ['free', 'pro'], default: 'free' },
   anthropicApiKey: { type: String, default: null },

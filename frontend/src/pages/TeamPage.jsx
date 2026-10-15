@@ -29,7 +29,7 @@ export default function TeamPage() {
       setPending(p => [...p, { email, role }]);
       setInviteLink(link);
       setEmail('');
-      toast.success('Invite sent');
+      toast.success('Invite link generated — copy and share it');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to send invite');
     }
@@ -108,7 +108,7 @@ export default function TeamPage() {
         {/* Invite */}
         <div className="card" style={{ padding: 22, marginBottom: 22 }}>
           <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 600 }}>Invite Team Member</h3>
-          <p style={{ margin: '0 0 16px', color: 'var(--text-2)', fontSize: 13 }}>They'll get an email with a one-click join link.</p>
+          <p style={{ margin: '0 0 16px', color: 'var(--text-2)', fontSize: 13 }}>Generate a one-click join link and share it with your teammate.</p>
           <form onSubmit={sendInvite} style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ position: 'relative', flex: '1 1 240px' }}>
               <Icons.Mail size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)' }} />
@@ -125,7 +125,7 @@ export default function TeamPage() {
 
           {inviteLink && (
             <div className="fade-up" style={{ marginTop: 16, padding: 14, borderRadius: 8, background: 'rgba(34,197,94,.07)', border: '1px solid rgba(34,197,94,.25)' }}>
-              <div style={{ fontSize: 12, color: '#86EFAC', marginBottom: 8, fontWeight: 600 }}>Invite link ready · expires in 7 days</div>
+              <div style={{ fontSize: 12, color: '#86EFAC', marginBottom: 8, fontWeight: 600 }}>Invite link ready — copy and share with your teammate. Expires in 7 days.</div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input className="input mono" style={{ fontSize: 12, padding: '8px 10px' }} value={inviteLink} readOnly />
                 <button onClick={() => { navigator.clipboard?.writeText(inviteLink); toast.success('Link copied'); }}

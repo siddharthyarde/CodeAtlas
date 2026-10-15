@@ -5,6 +5,50 @@ import { PageHeader } from '../components/Shared';
 import Icons from '../components/Icons';
 import api from '../services/api';
 
+function RepoSelector() {
+  const navigate = useNavigate();
+  const [repos, setRepos] = useState([]);
+  const [selected, setSelected] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/repo').then(res => {
+      const d = res.data.data;
+      setRepos(Array.isArray(d) ? d : (d?.repos || []));
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="card fade-up" style={{ padding: 32, textAlign: 'center', maxWidth: 480, margin: '60px auto' }}>
+      <div style={{ width: 56, height: 56, borderRadius: 14, background: 'rgba(124,58,237,.12)', color: '#A78BFA', display: 'grid', placeItems: 'center', margin: '0 auto 16px' }}>
+        <Icons.Activity size={26} />
+      </div>
+      <h3 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 700 }}>Select a Repository</h3>
+      <p style={{ margin: '0 0 22px', color: 'var(--text-2)', fontSize: 13.5 }}>Choose which repository to run complexity analysis on.</p>
+      {loading ? (
+        <div style={{ color: 'var(--text-3)', fontSize: 13 }}>Loading repositories…</div>
+      ) : repos.length === 0 ? (
+        <div style={{ color: 'var(--text-3)', fontSize: 13 }}>
+          No repositories yet. <a href="/repositories" style={{ color: '#A78BFA' }}>Import one first →</a>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 10 }}>
+          <select value={selected} onChange={e => setSelected(e.target.value)}
+            style={{ flex: 1, padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, color: selected ? 'white' : 'var(--text-3)', fontSize: 13, fontFamily: 'inherit', cursor: 'pointer' }}>
+            <option value="">Choose a repository…</option>
+            {repos.map(r => (
+              <option key={r._id} value={r._id}>{r.name || r.url?.split('/').slice(-1)[0]}{r.status !== 'complete' ? ` (${r.status})` : ''}</option>
+            ))}
+          </select>
+          <button className="btn btn-primary" disabled={!selected} onClick={() => navigate(`/complexity?repo=${selected}`)}>
+            Analyze
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const riskOrder = { critical: 0, high: 1, medium: 2, low: 3 };
 const riskColors = { critical: '#EF4444', high: '#F97316', medium: '#F59E0B', low: '#22C55E' };
 const riskBgs = { critical: 'rgba(239,68,68,.05)', high: 'rgba(249,115,22,.05)', medium: 'rgba(245,158,11,.05)', low: 'rgba(34,197,94,.05)' };
@@ -103,6 +147,14 @@ export default function ComplexityPage() {
     { key: 'low',      label: 'Low',      count: counts.low,      color: '#22C55E' },
   ];
 
+  if (!repoId) {
+    return (
+      <PageWrapper>
+        <RepoSelector />
+      </PageWrapper>
+    );
+  }
+
   return (
     <PageWrapper>
       <div className="fade-up">
@@ -139,7 +191,7 @@ export default function ComplexityPage() {
           </div>
         ) : items.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-2)' }}>
-            {repoId ? 'No complexity data yet. Import and analyze a repository first.' : 'Select a repository to view complexity analysis.'}
+            {repoId ? 'No complexity data yet — make sure the repository has been fully processed.' : ''}
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>

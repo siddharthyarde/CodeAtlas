@@ -3,10 +3,55 @@ import { PageWrapper } from '../components/Layout';
 import { PageHeader, StatCard } from '../components/Shared';
 import Icons from '../components/Icons';
 import api from '../services/api';
+import toast from 'react-hot-toast';
+
+function UpgradeModal({ onClose }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', backdropFilter: 'blur(4px)', display: 'grid', placeItems: 'center', zIndex: 9999, padding: 20 }} onClick={onClose}>
+      <div className="card fade-up" style={{ padding: 32, maxWidth: 500, width: '100%', borderColor: 'rgba(124,58,237,.4)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(124,58,237,.18)', color: '#A78BFA', display: 'grid', placeItems: 'center' }}>
+            <Icons.Zap size={22} />
+          </div>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Upgrade to Pro</h3>
+            <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 2 }}>$29 / month · cancel anytime</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+          {[
+            ['Unlimited AI calls', 'No monthly cap on explanations, PR reviews, and search'],
+            ['Unlimited repositories', 'Import as many repos as you need'],
+            ['Team collaboration', 'Invite unlimited team members'],
+            ['Priority support', 'Direct access to the team'],
+          ].map(([title, desc]) => (
+            <div key={title} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <Icons.CheckCircle size={16} style={{ color: '#22C55E', flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'white' }}>{title}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 2 }}>{desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose}>Maybe later</button>
+          <button className="btn btn-primary" style={{ flex: 2 }} onClick={() => {
+            toast.success('Billing coming soon — contact siddharthyarde@gmail.com to upgrade');
+            onClose();
+          }}>
+            <Icons.Zap size={14} /> Upgrade Now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function UsagePage() {
   const [usageData, setUsageData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   useEffect(() => {
     api.get('/usage').then(res => {
@@ -25,6 +70,7 @@ export default function UsagePage() {
   const maxCalls = topRepos[0]?.calls || 1;
 
   return (
+    <>
     <PageWrapper>
       <div className="fade-up">
         <PageHeader title="Usage" subtitle="Track your AI calls, files analyzed, and plan limits" />
@@ -36,7 +82,7 @@ export default function UsagePage() {
             <h3 style={{ margin: '8px 0 4px', fontSize: 17, fontWeight: 600 }}>You're on the free tier</h3>
             <p style={{ margin: 0, color: 'var(--text-2)', fontSize: 13 }}>50 AI calls per month · 3 repositories · single user</p>
           </div>
-          <button className="btn btn-primary"><Icons.Zap size={14} /> Upgrade to Pro</button>
+          <button className="btn btn-primary" onClick={() => setShowUpgrade(true)}><Icons.Zap size={14} /> Upgrade to Pro</button>
         </div>
 
         {/* Stats */}
@@ -122,10 +168,12 @@ export default function UsagePage() {
           <div style={{ position: 'relative' }}>
             <h3 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 700, color: 'white' }}>Upgrade to Pro</h3>
             <p style={{ margin: '0 0 18px', color: 'rgba(255,255,255,.85)', fontSize: 14 }}>Unlimited AI calls · Team features · Priority support · $29/month</p>
-            <button style={{ padding: '11px 24px', borderRadius: 8, background: 'white', color: '#5B21B6', border: 0, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Upgrade Now</button>
+            <button style={{ padding: '11px 24px', borderRadius: 8, background: 'white', color: '#5B21B6', border: 0, fontWeight: 700, fontSize: 14, cursor: 'pointer' }} onClick={() => setShowUpgrade(true)}>Upgrade Now</button>
           </div>
         </div>
       </div>
     </PageWrapper>
+    {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
+    </>
   );
 }
